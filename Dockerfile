@@ -69,7 +69,7 @@ RUN mkdir -p /ms-playwright && \
     chown -R appuser:appuser /app /ms-playwright && \
     chmod -R 755 /app /ms-playwright
 
-EXPOSE 5000
+EXPOSE 8080
 
 USER appuser
 
