@@ -61,7 +61,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=build /app/publish ./
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 
 RUN mkdir -p /ms-playwright && \
