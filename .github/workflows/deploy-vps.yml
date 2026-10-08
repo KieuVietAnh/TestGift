@@ -93,6 +93,21 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "mkdir -p ~/tetgift"
           scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" docker-compose.prod.yml Caddyfile "$VPS_USER@$VPS_HOST:~/tetgift/"
 
+      - name: Upload production environment
+        env:
+          VPS_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_USER: ${{ secrets.VPS_SSH_USER }}
+          VPS_ENV_FILE: ${{ secrets.VPS_ENV_FILE }}
+        run: |
+          if [ -z "$VPS_ENV_FILE" ]; then
+            echo "Missing GitHub secret: VPS_ENV_FILE"
+            exit 1
+          fi
+
+          printf '%s\n' "$VPS_ENV_FILE" | ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            'umask 077; mkdir -p ~/tetgift; cat > ~/tetgift/.env'
+
       - name: Deploy and verify
         env:
           VPS_HOST: ${{ secrets.VPS_SSH_HOST }}

@@ -36,13 +36,11 @@ mkdir -p ~/tetgift
 
 Đăng xuất rồi SSH lại. Mở firewall cho cổng SSH thực tế, 80/TCP, 443/TCP và 443/UDP trước khi bật UFW.
 
-## 4. Tạo ~/tetgift/.env trên VPS
+## 4. Tạo production environment
 
-Sao chép nội dung .env.example, thay toàn bộ giá trị mẫu rồi chạy:
+Sao chép `.env.example` thành một file local như `.env.production`, thay toàn bộ giá trị mẫu và không commit file này. Nội dung hoàn chỉnh sẽ được lưu trong GitHub Environment Secret `VPS_ENV_FILE`; workflow tự ghi secret thành `~/tetgift/.env` với quyền chỉ chủ sở hữu được đọc.
 
-~~~bash
-chmod 600 ~/tetgift/.env
-~~~
+Không cần SCP `.env` thủ công lên VPS và không lưu secret trong repository.
 
 Giá trị quan trọng:
 
@@ -67,13 +65,16 @@ ssh-keyscan.exe -H -p 22 VPS_HOST
 
 ## 6. Thêm GitHub Actions secrets
 
-Trong Settings > Secrets and variables > Actions, tạo:
+Trong Settings > Environments, tạo environment `production`. Trong Environment secrets của `production`, tạo:
 
 - VPS_SSH_HOST
 - VPS_SSH_PORT
 - VPS_SSH_USER
 - VPS_SSH_PRIVATE_KEY: toàn bộ nội dung private key.
 - VPS_KNOWN_HOSTS: output của ssh-keyscan.
+- VPS_ENV_FILE: toàn bộ nội dung `.env.production`, bao gồm Supabase connection string và các application secrets.
+
+Có thể dùng repository secrets thay cho environment secrets, nhưng environment `production` giúp giới hạn secret theo môi trường deploy.
 
 ## 7. Deploy
 
@@ -82,8 +83,9 @@ Push branch main hoặc chạy Actions > Deploy VPS > Run workflow. Pipeline s�
 1. Build BE/ và FE/ độc lập.
 2. Push hai image theo commit SHA lên GHCR.
 3. Copy Compose và Caddyfile lên VPS.
-4. Pull đúng hai image, chạy migration, khởi động FE/BE và cấp HTTPS.
-5. Kiểm tra cả trang chủ và /health/ready.
+4. Ghi `VPS_ENV_FILE` thành `~/tetgift/.env` mà không in nội dung secret vào log.
+5. Pull đúng hai image, chạy migration, khởi động FE/BE và cấp HTTPS.
+6. Kiểm tra cả trang chủ và /health/ready.
 
 ## 8. Kiểm tra
 
@@ -95,7 +97,7 @@ docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml p
 docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml logs -f --tail=200
 ~~~
 
-Sau lần deploy đầu, xóa Seed__AdminPassword khỏi ~/tetgift/.env rồi chạy workflow lại. Sau khi tích hợp ổn định, đặt Swagger__Enabled=false.
+Sau lần deploy đầu, xóa `Seed__AdminPassword` khỏi GitHub secret `VPS_ENV_FILE` rồi chạy workflow lại. Sau khi tích hợp ổn định, đặt `Swagger__Enabled=false`.
 
 ## 9. Secrets cũ
 
