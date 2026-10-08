@@ -1,4 +1,4 @@
-name: Deploy VPS
+name: CI and Deploy TetGift Fullstack
 
 on:
   push:
@@ -8,152 +8,148 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: tetgift-production
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+env:
+  APP_DIR: /home/vietanh/tetgift
+  BACKEND_IMAGE: tetgift-api
+  FRONTEND_IMAGE: tetgift-web
+  WEB_DOMAIN: tetgift.khaifrost.com
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    outputs:
-      backend_image: ${{ steps.images.outputs.backend }}
-      frontend_image: ${{ steps.images.outputs.frontend }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+  verify-build-deploy:
+    name: Build and deploy TetGift locally
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+    environment:
+      name: production
+      url: https://tetgift.khaifrost.com
 
-      - name: Set image names
-        id: images
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Validate production environment secret
         shell: bash
-        run: |
-          BASE_IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          echo "backend=${BASE_IMAGE}-backend" >> "$GITHUB_OUTPUT"
-          echo "frontend=${BASE_IMAGE}-frontend" >> "$GITHUB_OUTPUT"
-
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build and push backend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./BE
-          file: ./BE/Dockerfile
-          push: true
-          tags: |
-            ${{ steps.images.outputs.backend }}:${{ github.sha }}
-            ${{ steps.images.outputs.backend }}:latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./FE
-          file: ./FE/Dockerfile
-          push: true
-          tags: |
-            ${{ steps.images.outputs.frontend }}:${{ github.sha }}
-            ${{ steps.images.outputs.frontend }}:latest
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Checkout deployment files
-        uses: actions/checkout@v7
-
-      - name: Configure SSH
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-
-      - name: Upload deployment files
-        env:
-          VPS_HOST: ${{ secrets.VPS_SSH_HOST }}
-          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
-          VPS_USER: ${{ secrets.VPS_SSH_USER }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "mkdir -p ~/tetgift"
-          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" docker-compose.prod.yml Caddyfile "$VPS_USER@$VPS_HOST:~/tetgift/"
-
-      - name: Upload production environment
-        env:
-          VPS_HOST: ${{ secrets.VPS_SSH_HOST }}
-          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
-          VPS_USER: ${{ secrets.VPS_SSH_USER }}
           VPS_ENV_FILE: ${{ secrets.VPS_ENV_FILE }}
         run: |
-          if [ -z "$VPS_ENV_FILE" ]; then
+          set -euo pipefail
+
+          if [ -z "${VPS_ENV_FILE}" ]; then
             echo "Missing GitHub secret: VPS_ENV_FILE"
             exit 1
           fi
 
-          printf '%s\n' "$VPS_ENV_FILE" | ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            'umask 077; mkdir -p ~/tetgift; cat > ~/tetgift/.env'
+          normalized_env="$(printf '%s\n' "${VPS_ENV_FILE}" | tr -d '\r')"
+          for name in \
+            WEB_DOMAIN \
+            ConnectionStrings__DefaultConnection \
+            Jwt__Key \
+            Otp__Secret
+          do
+            value="$(printf '%s\n' "${normalized_env}" | sed -n "s/^${name}=//p" | tail -n 1)"
+            if [ -z "${value}" ]; then
+              echo "Missing or empty value in VPS_ENV_FILE: ${name}"
+              exit 1
+            fi
+          done
 
-      - name: Deploy and verify
+          configured_domain="$(printf '%s\n' "${normalized_env}" | sed -n 's/^WEB_DOMAIN=//p' | tail -n 1)"
+          if [ "${configured_domain}" != "${WEB_DOMAIN}" ]; then
+            echo "WEB_DOMAIN must be ${WEB_DOMAIN}"
+            exit 1
+          fi
+
+      - name: Build backend image
+        shell: bash
+        run: docker build -t "${BACKEND_IMAGE}:latest" -f BE/Dockerfile BE
+
+      - name: Build frontend image
+        shell: bash
+        run: docker build -t "${FRONTEND_IMAGE}:latest" -f FE/Dockerfile FE
+
+      - name: Install production environment and Compose file
+        shell: bash
         env:
-          VPS_HOST: ${{ secrets.VPS_SSH_HOST }}
-          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
-          VPS_USER: ${{ secrets.VPS_SSH_USER }}
-          BACKEND_IMAGE: ${{ needs.build.outputs.backend_image }}
-          FRONTEND_IMAGE: ${{ needs.build.outputs.frontend_image }}
-          IMAGE_TAG: ${{ github.sha }}
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VPS_ENV_FILE: ${{ secrets.VPS_ENV_FILE }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "TETGIFT_BE_IMAGE='$BACKEND_IMAGE:$IMAGE_TAG' TETGIFT_FE_IMAGE='$FRONTEND_IMAGE:$IMAGE_TAG' GHCR_USER='$GHCR_USER' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
-          set -Eeuo pipefail
-          cd ~/tetgift
+          set -euo pipefail
+          install -d -m 700 "${APP_DIR}"
 
-          if [ ! -f .env ]; then
-            echo "Missing ~/tetgift/.env on VPS"
-            exit 1
-          fi
+          umask 077
+          printf '%s\n' "${VPS_ENV_FILE}" | tr -d '\r' > "${APP_DIR}/.env"
+          printf 'TETGIFT_BE_IMAGE=%s\nTETGIFT_FE_IMAGE=%s\n' \
+            "${BACKEND_IMAGE}:latest" \
+            "${FRONTEND_IMAGE}:latest" \
+            > "${APP_DIR}/image.env"
 
-          printf 'TETGIFT_BE_IMAGE=%s\nTETGIFT_FE_IMAGE=%s\n' "$TETGIFT_BE_IMAGE" "$TETGIFT_FE_IMAGE" > image.env
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          chmod 600 "${APP_DIR}/.env" "${APP_DIR}/image.env"
+          install -m 644 docker-compose.prod.yml "${APP_DIR}/docker-compose.prod.yml"
 
-          docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml config >/dev/null
-          docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml pull
-          docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml up -d --remove-orphans
+      - name: Deploy backend and frontend locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            --project-directory "${APP_DIR}" \
+            --env-file "${APP_DIR}/.env" \
+            --env-file "${APP_DIR}/image.env" \
+            -f "${APP_DIR}/docker-compose.prod.yml" \
+            config > /dev/null
 
-          WEB_DOMAIN="$(grep -E '^WEB_DOMAIN=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
-          if [ -z "$WEB_DOMAIN" ]; then
-            echo "WEB_DOMAIN is missing in ~/tetgift/.env"
-            exit 1
-          fi
+          docker compose \
+            --project-directory "${APP_DIR}" \
+            --env-file "${APP_DIR}/.env" \
+            --env-file "${APP_DIR}/image.env" \
+            -f "${APP_DIR}/docker-compose.prod.yml" \
+            up -d --force-recreate --remove-orphans
 
+      - name: Check backend health through Nginx
+        shell: bash
+        run: |
+          set -euo pipefail
           for attempt in $(seq 1 30); do
-            if curl -fsS "https://$WEB_DOMAIN/health/ready" >/dev/null; then
-              curl -fsS "https://$WEB_DOMAIN/" >/dev/null
-              echo "Frontend and backend are healthy: https://$WEB_DOMAIN"
-              docker image prune -f >/dev/null
+            if curl --fail --silent --show-error \
+              --header "Host: ${WEB_DOMAIN}" \
+              http://127.0.0.1/health/ready > /dev/null
+            then
+              echo "TetGift API is healthy"
               exit 0
             fi
-
-            echo "Waiting for deployment health check ($attempt/30)..."
+            echo "Waiting for TetGift API (${attempt}/30)..."
             sleep 10
           done
 
-          docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml logs --tail=200
+          docker compose \
+            --project-directory "${APP_DIR}" \
+            --env-file "${APP_DIR}/.env" \
+            --env-file "${APP_DIR}/image.env" \
+            -f "${APP_DIR}/docker-compose.prod.yml" \
+            logs --tail=200
           exit 1
-          REMOTE
+
+      - name: Check frontend health through Nginx
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            --retry 6 \
+            --retry-delay 5 \
+            --header "Host: ${WEB_DOMAIN}" \
+            http://127.0.0.1/ > /dev/null
+
+      - name: Show deployment status
+        shell: bash
+        run: |
+          docker compose \
+            --project-directory "${APP_DIR}" \
+            --env-file "${APP_DIR}/.env" \
+            --env-file "${APP_DIR}/image.env" \
+            -f "${APP_DIR}/docker-compose.prod.yml" \
+            ps
+          docker image prune -f

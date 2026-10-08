@@ -2,103 +2,104 @@
 
 Cập nhật: 08/10/2026.
 
-Repository gồm BE và FE. GitHub Actions build hai Docker image, push lên GHCR, SSH vào VPS và chạy Docker Compose. Caddy phục vụ một domain: frontend ở /, backend ở /api, /hubs, /health, /swagger và /uploads.
+Repository dùng GitHub Actions self-hosted runner đã cài trên VPS. Runner checkout source, build hai Docker image ngay trên VPS và chạy Docker Compose cục bộ. Nginx của VPS nhận request theo domain; Cloudflare Tunnel chỉ công bố domain HTTPS ra Internet.
 
-## 1. Cấu trúc repository
+## 1. Kiến trúc production
 
-- BE/: ASP.NET Core API, EF Core migrations và Dockerfile backend.
-- FE/: React/Vite, Dockerfile frontend và Nginx SPA fallback.
-- .github/workflows/deploy-vps.yml: build và deploy cả hai image.
-- docker-compose.prod.yml và Caddyfile: production stack trên VPS.
+- Cloudflare Tunnel: `tetgift.khaifrost.com` đến `http://192.168.10.109`.
+- Nginx: nhận domain TetGift trên cổng `80`.
+- Frontend container: bind `127.0.0.1:3001` đến cổng `80` của container.
+- Backend container: bind `127.0.0.1:10000` đến cổng `10000` của container.
+- Nginx chuyển `/api`, `/hubs`, `/health`, `/swagger` và `/uploads` sang backend; các path còn lại sang frontend.
+- Urban Service tiếp tục dùng cấu hình và container riêng, không bị TetGift thay thế.
 
-## 2. Chuẩn bị domain, VPS và Supabase
+## 2. Supabase
 
-- VPS Ubuntu 22.04/24.04, tối thiểu 2 GB RAM vì backend dùng Chromium để tạo PDF.
-- Tạo DNS A record của gift.example.com trỏ đến IPv4 VPS.
-- Tạo Supabase project. Nếu VPS chỉ có IPv4, chọn Connect > Session pooler, port 5432. Nếu VPS có IPv6 ổn định, có thể dùng Direct connection.
-- Connection string Npgsql mẫu:
+Dùng project `TestGift_DB`, project ref `odevqyiajlnsaumbcjpd`. Backend kết nối bằng Session pooler cổng `5432` và tự chạy EF Core migrations khi `Database__AutoMigrate=true`.
+
+Connection string Npgsql:
 
 ~~~text
-Host=POOLER_HOST;Port=5432;Database=postgres;Username=postgres.PROJECT_REF;Password=DATABASE_PASSWORD;SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=20
+Host=SESSION_POOLER_HOST;Port=5432;Database=postgres;Username=postgres.odevqyiajlnsaumbcjpd;Password=DATABASE_PASSWORD;SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=20
 ~~~
 
-Không cần Supabase anon key hoặc service-role key vì backend kết nối PostgreSQL trực tiếp.
+Không commit connection string hoặc mật khẩu database.
 
-## 3. Cài Docker trên VPS
+## 3. GitHub self-hosted runner
+
+Workflow `.github/workflows/deploy-vps.yml` yêu cầu runner có các label:
+
+- `self-hosted`
+- `Linux`
+- `X64`
+
+Runner phải chạy bằng user có quyền Docker và quyền ghi vào `/home/vietanh/tetgift`. Không cần mở SSH ra Internet, không cần GHCR và không cần deploy key.
+
+## 4. GitHub Environment secret
+
+Trong repository, tạo Environment `production`. Thêm một Environment secret:
+
+- `VPS_ENV_FILE`: toàn bộ nội dung file `.env.production`.
+
+Workflow không in nội dung secret. Trên VPS, secret được chuẩn hóa về LF rồi ghi vào `/home/vietanh/tetgift/.env` với quyền `600`.
+
+Các giá trị bắt buộc trong secret:
+
+- `WEB_DOMAIN`
+- `ConnectionStrings__DefaultConnection`
+- `Jwt__Key`
+- `Otp__Secret`
+
+Lần deploy đầu nên có thêm `Seed__AdminUsername`, `Seed__AdminEmail` và `Seed__AdminPassword`. Sau khi admin đã được tạo, có thể xóa `Seed__AdminPassword` khỏi secret và chạy workflow lại.
+
+## 5. Pipeline deploy
+
+Push branch `main` hoặc chạy `Actions > CI and Deploy TetGift Fullstack > Run workflow`. Pipeline sẽ:
+
+1. Checkout source trên self-hosted runner.
+2. Kiểm tra `VPS_ENV_FILE` và domain production.
+3. Build image `tetgift-api:latest` từ `BE/Dockerfile`.
+4. Build image `tetgift-web:latest` từ `FE/Dockerfile`.
+5. Ghi environment và Compose vào `/home/vietanh/tetgift`.
+6. Chạy hai container bằng Docker Compose.
+7. Kiểm tra backend và frontend thông qua Nginx cục bộ.
+8. Hiển thị trạng thái container và xóa image dangling.
+
+Pipeline không purge Cloudflare cache.
+
+## 6. Cloudflare Tunnel
+
+Chỉ tạo Published application sau khi deploy local thành công:
+
+~~~text
+Hostname: tetgift.khaifrost.com
+Service:  http://192.168.10.109
+~~~
+
+Không cần hostname API riêng vì Nginx xử lý backend theo path.
+
+## 7. Kiểm tra trên VPS
 
 ~~~bash
-sudo apt update
-sudo apt install -y ca-certificates curl
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker "$USER"
-mkdir -p ~/tetgift
-~~~
+curl -f -H "Host: tetgift.khaifrost.com" http://127.0.0.1/
+curl -f -H "Host: tetgift.khaifrost.com" http://127.0.0.1/health/ready
 
-Đăng xuất rồi SSH lại. Mở firewall cho cổng SSH thực tế, 80/TCP, 443/TCP và 443/UDP trước khi bật UFW.
-
-## 4. Tạo production environment
-
-Sao chép `.env.example` thành một file local như `.env.production`, thay toàn bộ giá trị mẫu và không commit file này. Nội dung hoàn chỉnh sẽ được lưu trong GitHub Environment Secret `VPS_ENV_FILE`; workflow tự ghi secret thành `~/tetgift/.env` với quyền chỉ chủ sở hữu được đọc.
-
-Không cần SCP `.env` thủ công lên VPS và không lưu secret trong repository.
-
-Giá trị quan trọng:
-
-- WEB_DOMAIN: hostname, không có https:// và không có dấu / cuối.
-- ConnectionStrings__DefaultConnection: Supabase connection string.
-- Cors__AllowedOrigins và AppUrls__FrontendBaseUrl: https://WEB_DOMAIN.
-- Jwt__Key và Otp__Secret: hai chuỗi ngẫu nhiên dài, khác nhau.
-- Seed__AdminUsername, Seed__AdminEmail, Seed__AdminPassword: chỉ cần cho lần deploy đầu.
-- Resend/Cloudinary cần cho OTP và upload; Gemini/VNPAY bổ sung khi bật tính năng.
-
-Frontend dùng same-origin /api và /hubs/chat nên không cần lưu Vite environment variables trên VPS.
-
-## 5. Tạo SSH deploy key
-
-Trên PowerShell:
-
-~~~powershell
-ssh-keygen.exe -t ed25519 -f .\tetgift-github-actions -C github-actions-tetgift
-Get-Content .\tetgift-github-actions.pub | ssh VPS_USER@VPS_HOST "umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys"
-ssh-keyscan.exe -H -p 22 VPS_HOST
-~~~
-
-## 6. Thêm GitHub Actions secrets
-
-Trong Settings > Environments, tạo environment `production`. Trong Environment secrets của `production`, tạo:
-
-- VPS_SSH_HOST
-- VPS_SSH_PORT
-- VPS_SSH_USER
-- VPS_SSH_PRIVATE_KEY: toàn bộ nội dung private key.
-- VPS_KNOWN_HOSTS: output của ssh-keyscan.
-- VPS_ENV_FILE: toàn bộ nội dung `.env.production`, bao gồm Supabase connection string và các application secrets.
-
-Có thể dùng repository secrets thay cho environment secrets, nhưng environment `production` giúp giới hạn secret theo môi trường deploy.
-
-## 7. Deploy
-
-Push branch main hoặc chạy Actions > Deploy VPS > Run workflow. Pipeline sẽ:
-
-1. Build BE/ và FE/ độc lập.
-2. Push hai image theo commit SHA lên GHCR.
-3. Copy Compose và Caddyfile lên VPS.
-4. Ghi `VPS_ENV_FILE` thành `~/tetgift/.env` mà không in nội dung secret vào log.
-5. Pull đúng hai image, chạy migration, khởi động FE/BE và cấp HTTPS.
-6. Kiểm tra cả trang chủ và /health/ready.
-
-## 8. Kiểm tra
-
-~~~bash
-curl -f https://gift.example.com/
-curl -f https://gift.example.com/health/ready
-cd ~/tetgift
+cd /home/vietanh/tetgift
 docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml ps
 docker compose --env-file .env --env-file image.env -f docker-compose.prod.yml logs -f --tail=200
 ~~~
 
-Sau lần deploy đầu, xóa `Seed__AdminPassword` khỏi GitHub secret `VPS_ENV_FILE` rồi chạy workflow lại. Sau khi tích hợp ổn định, đặt `Swagger__Enabled=false`.
+Sau khi Cloudflare route hoạt động:
 
-## 9. Secrets cũ
+~~~bash
+curl -f https://tetgift.khaifrost.com/
+curl -f https://tetgift.khaifrost.com/health/ready
+~~~
 
-Các khóa từng nằm trong appsettings.json và lịch sử Git phải được thu hồi hoặc tạo lại: database password, Resend, Cloudinary, Gemini, VNPAY và Redis.
+## 8. Bảo mật
+
+- Không commit `.env.production` hoặc `.env`.
+- Không công khai cổng `3001` hoặc `10000`.
+- Không dùng Supabase service-role key trong frontend.
+- Sau khi production ổn định, đặt `Swagger__Enabled=false`.
+- Thu hồi ngay mọi secret từng bị commit hoặc xuất hiện trong log.

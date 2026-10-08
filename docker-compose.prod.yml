@@ -4,8 +4,8 @@ services:
     container_name: tetgift-api
     env_file:
       - .env
-    expose:
-      - "10000"
+    ports:
+      - "127.0.0.1:10000:10000"
     init: true
     shm_size: 1gb
     restart: unless-stopped
@@ -20,8 +20,8 @@ services:
   tetgift-web:
     image: ${TETGIFT_FE_IMAGE:?TETGIFT_FE_IMAGE is required}
     container_name: tetgift-web
-    expose:
-      - "80"
+    ports:
+      - "127.0.0.1:3001:80"
     restart: unless-stopped
     networks:
       - tetgift
@@ -31,29 +31,5 @@ services:
         max-size: 10m
         max-file: "3"
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: tetgift-caddy
-    environment:
-      WEB_DOMAIN: ${WEB_DOMAIN:?WEB_DOMAIN is required}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - tetgift-api
-      - tetgift-web
-    restart: unless-stopped
-    networks:
-      - tetgift
-
 networks:
   tetgift:
-
-volumes:
-  caddy_data:
-  caddy_config:
