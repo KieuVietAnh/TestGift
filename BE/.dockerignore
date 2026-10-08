@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vs
+.vscode
+.idea
+*.swp
+*.swo
+
+# Build outputs
+**/bin
+**/obj
+**/out
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet
+**/packages
+.nuget
+.dotnet
+.local
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Test results
+**/TestResults
+
+# Docker
+**/Dockerfile*
+**/.dockerignore
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github
+
+# Misc
+*.log
+*.tmp
