@@ -47,8 +47,11 @@ Các giá trị bắt buộc trong secret:
 
 - `WEB_DOMAIN`
 - `ConnectionStrings__DefaultConnection`
+- `Database__AutoMigrate=true`
 - `Jwt__Key`
 - `Otp__Secret`
+
+Cloudinary là tùy chọn. Nếu bật upload media, phải cấu hình đủ `CloudinarySettings__CloudName`, `CloudinarySettings__ApiKey` và `CloudinarySettings__ApiSecret`; không được chỉ cấu hình một phần.
 
 Lần deploy đầu nên có thêm `Seed__AdminUsername`, `Seed__AdminEmail` và `Seed__AdminPassword`. Sau khi admin đã được tạo, có thể xóa `Seed__AdminPassword` khỏi secret và chạy workflow lại.
 
@@ -63,7 +66,8 @@ Push branch `main` hoặc chạy `Actions > CI and Deploy TetGift Fullstack > Ru
 5. Ghi environment và Compose vào `/home/vietanh/tetgift`.
 6. Chạy hai container bằng Docker Compose.
 7. Kiểm tra backend và frontend thông qua Nginx cục bộ.
-8. Hiển thị trạng thái container và xóa image dangling.
+8. Kiểm tra các API public `/api/configs`, `/api/products` và `/api/inventories/stocks`.
+9. Hiển thị trạng thái container và xóa image dangling.
 
 Pipeline không purge Cloudflare cache.
 

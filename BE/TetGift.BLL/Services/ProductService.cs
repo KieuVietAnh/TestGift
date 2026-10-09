@@ -7,11 +7,10 @@ using TetGift.DAL.Interfaces;
 
 namespace TetGift.BLL.Services;
 
-public class ProductService(IUnitOfWork uow, IInventoryService inventoryService, ICacheService cacheService, IMediaService mediaService) : IProductService
+public class ProductService(IUnitOfWork uow, ICacheService cacheService) : IProductService
 {
     private readonly IUnitOfWork _uow = uow;
     private readonly ICacheService _cacheService = cacheService;
-    private readonly IMediaService _mediaService = mediaService;
 
     public async Task CreateNormalAsync(CreateSingleProductRequest dto)
     {

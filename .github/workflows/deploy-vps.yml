@@ -50,6 +50,7 @@ jobs:
           for name in \
             WEB_DOMAIN \
             ConnectionStrings__DefaultConnection \
+            Database__AutoMigrate \
             Jwt__Key \
             Otp__Secret
           do
@@ -63,6 +64,29 @@ jobs:
           configured_domain="$(printf '%s\n' "${normalized_env}" | sed -n 's/^WEB_DOMAIN=//p' | tail -n 1)"
           if [ "${configured_domain}" != "${WEB_DOMAIN}" ]; then
             echo "WEB_DOMAIN must be ${WEB_DOMAIN}"
+            exit 1
+          fi
+
+          auto_migrate="$(printf '%s\n' "${normalized_env}" | sed -n 's/^Database__AutoMigrate=//p' | tail -n 1 | tr '[:upper:]' '[:lower:]')"
+          if [ "${auto_migrate}" != "true" ]; then
+            echo "Database__AutoMigrate must be true for production deployments"
+            exit 1
+          fi
+
+          cloudinary_values=0
+          for name in \
+            CloudinarySettings__CloudName \
+            CloudinarySettings__ApiKey \
+            CloudinarySettings__ApiSecret
+          do
+            value="$(printf '%s\n' "${normalized_env}" | sed -n "s/^${name}=//p" | tail -n 1)"
+            if [ -n "${value}" ]; then
+              cloudinary_values=$((cloudinary_values + 1))
+            fi
+          done
+
+          if [ "${cloudinary_values}" -ne 0 ] && [ "${cloudinary_values}" -ne 3 ]; then
+            echo "Cloudinary settings must either all be set or all be empty"
             exit 1
           fi
 
@@ -142,6 +166,17 @@ jobs:
             --retry-delay 5 \
             --header "Host: ${WEB_DOMAIN}" \
             http://127.0.0.1/ > /dev/null
+
+      - name: Check public API readiness through Nginx
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /api/configs /api/products /api/inventories/stocks; do
+            curl --fail --silent --show-error \
+              --header "Host: ${WEB_DOMAIN}" \
+              "http://127.0.0.1${path}" > /dev/null
+            echo "TetGift API endpoint is ready: ${path}"
+          done
 
       - name: Show deployment status
         shell: bash
