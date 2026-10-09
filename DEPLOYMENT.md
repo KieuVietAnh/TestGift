@@ -47,11 +47,12 @@ Các giá trị bắt buộc trong secret:
 
 - `WEB_DOMAIN`
 - `ConnectionStrings__DefaultConnection`
-- `Database__AutoMigrate=true`
 - `Jwt__Key`
 - `Otp__Secret`
 
 Cloudinary là tùy chọn. Nếu bật upload media, phải cấu hình đủ `CloudinarySettings__CloudName`, `CloudinarySettings__ApiKey` và `CloudinarySettings__ApiSecret`; không được chỉ cấu hình một phần.
+
+Production không tự động thay đổi schema khi container khởi động. Áp dụng EF migrations có kiểm soát trước khi deploy phiên bản cần schema mới; smoke test API sẽ chặn pipeline nếu schema chưa sẵn sàng.
 
 Lần deploy đầu nên có thêm `Seed__AdminUsername`, `Seed__AdminEmail` và `Seed__AdminPassword`. Sau khi admin đã được tạo, có thể xóa `Seed__AdminPassword` khỏi secret và chạy workflow lại.
 

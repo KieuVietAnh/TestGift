@@ -50,7 +50,6 @@ jobs:
           for name in \
             WEB_DOMAIN \
             ConnectionStrings__DefaultConnection \
-            Database__AutoMigrate \
             Jwt__Key \
             Otp__Secret
           do
@@ -64,12 +63,6 @@ jobs:
           configured_domain="$(printf '%s\n' "${normalized_env}" | sed -n 's/^WEB_DOMAIN=//p' | tail -n 1)"
           if [ "${configured_domain}" != "${WEB_DOMAIN}" ]; then
             echo "WEB_DOMAIN must be ${WEB_DOMAIN}"
-            exit 1
-          fi
-
-          auto_migrate="$(printf '%s\n' "${normalized_env}" | sed -n 's/^Database__AutoMigrate=//p' | tail -n 1 | tr '[:upper:]' '[:lower:]')"
-          if [ "${auto_migrate}" != "true" ]; then
-            echo "Database__AutoMigrate must be true for production deployments"
             exit 1
           fi
 
