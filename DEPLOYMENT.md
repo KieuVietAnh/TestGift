@@ -54,7 +54,7 @@ Cloudinary là tùy chọn. Nếu bật upload media, phải cấu hình đủ `
 
 Production không tự động thay đổi schema khi container khởi động. Áp dụng EF migrations có kiểm soát trước khi deploy phiên bản cần schema mới; smoke test API sẽ chặn pipeline nếu schema chưa sẵn sàng.
 
-Lần deploy đầu nên có thêm `Seed__AdminUsername`, `Seed__AdminEmail` và `Seed__AdminPassword`. Sau khi admin đã được tạo, có thể xóa `Seed__AdminPassword` khỏi secret và chạy workflow lại.
+Lần deploy đầu nên có thêm `Seed__AdminUsername`, `Seed__AdminEmail` và `Seed__AdminPassword`. Việc tạo admin chạy độc lập với `Database__AutoMigrate`, nên production vẫn có thể giữ migration ở chế độ kiểm soát thủ công. Sau khi admin đã được tạo, có thể xóa `Seed__AdminPassword` khỏi secret và chạy workflow lại.
 
 ## 5. Pipeline deploy
 

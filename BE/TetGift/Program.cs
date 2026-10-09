@@ -284,19 +284,24 @@ namespace TetGift
             var autoMigrate = bool.TryParse(builder.Configuration["Database:AutoMigrate"], out var shouldMigrate)
                 && shouldMigrate;
 
-            if (autoMigrate)
+            var adminUsername = (builder.Configuration["Seed:AdminUsername"] ?? "").Trim();
+            var adminPassword = builder.Configuration["Seed:AdminPassword"] ?? "";
+            var adminEmail = (builder.Configuration["Seed:AdminEmail"] ?? "").Trim().ToLowerInvariant();
+            var shouldSeedAdmin = !string.IsNullOrWhiteSpace(adminUsername)
+                && !string.IsNullOrWhiteSpace(adminPassword)
+                && !string.IsNullOrWhiteSpace(adminEmail);
+
+            if (autoMigrate || shouldSeedAdmin)
             {
                 await using var scope = app.Services.CreateAsyncScope();
                 var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-                await database.Database.MigrateAsync();
 
-                var adminUsername = builder.Configuration["Seed:AdminUsername"]?.Trim();
-                var adminPassword = builder.Configuration["Seed:AdminPassword"];
-                var adminEmail = builder.Configuration["Seed:AdminEmail"]?.Trim().ToLowerInvariant();
+                if (autoMigrate)
+                {
+                    await database.Database.MigrateAsync();
+                }
 
-                if (!string.IsNullOrWhiteSpace(adminUsername)
-                    && !string.IsNullOrWhiteSpace(adminPassword)
-                    && !string.IsNullOrWhiteSpace(adminEmail))
+                if (shouldSeedAdmin)
                 {
                     var existingAdmin = await database.Accounts
                         .FirstOrDefaultAsync(account => account.Username == adminUsername);
@@ -315,6 +320,7 @@ namespace TetGift
                         });
 
                         await database.SaveChangesAsync();
+                        app.Logger.LogInformation("Created the configured administrator account.");
                     }
                 }
             }
