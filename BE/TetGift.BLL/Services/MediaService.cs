@@ -16,16 +16,25 @@ namespace TetGift.BLL.Services
 {
     public class MediaService : IMediaService
     {
-        private readonly Cloudinary _cloudinary;
+        private readonly Cloudinary? _cloudinary;
 
         public MediaService(IOptions<CloudinarySettings> config)
         {
-            var account = new Account(config.Value.CloudName, config.Value.ApiKey, config.Value.ApiSecret);
-            _cloudinary = new Cloudinary(account);
+            var settings = config.Value;
+            if (!string.IsNullOrWhiteSpace(settings.CloudName)
+                && !string.IsNullOrWhiteSpace(settings.ApiKey)
+                && !string.IsNullOrWhiteSpace(settings.ApiSecret))
+            {
+                var account = new Account(settings.CloudName, settings.ApiKey, settings.ApiSecret);
+                _cloudinary = new Cloudinary(account);
+            }
         }
 
         public async Task<MediaResponseDto> UploadMediaAsync(IFormFile file)
         {
+            if (_cloudinary == null)
+                throw new InvalidOperationException("Chức năng tải media chưa được cấu hình Cloudinary.");
+
             if (file == null || file.Length == 0) throw new Exception("File rỗng.");
 
             var extension = Path.GetExtension(file.FileName).ToLower();
@@ -68,6 +77,9 @@ namespace TetGift.BLL.Services
 
         public async Task<bool> DeleteMediaAsync(string publicId, string resourceType)
         {
+            if (_cloudinary == null)
+                throw new InvalidOperationException("Chức năng tải media chưa được cấu hình Cloudinary.");
+
             // Phải chỉ định đúng ResourceType thì Cloudinary mới tìm và xóa được
             var deleteParams = new DeletionParams(publicId)
             {

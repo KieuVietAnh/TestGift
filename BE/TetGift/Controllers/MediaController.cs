@@ -21,7 +21,7 @@ namespace TetGift.Controllers
         {
             try
             {
-                var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".mp4", ".avi", ".mov" };
+                var allowedExtensions = new[] { ".jpg", ".jpeg", ".jfif", ".png", ".mp4", ".avi", ".mov" };
                 var extension = Path.GetExtension(file.FileName).ToLower();
 
                 if (!allowedExtensions.Contains(extension))
@@ -29,7 +29,7 @@ namespace TetGift.Controllers
                     return BadRequest(new ApiResponse<MediaResponseDto>
                     {
                         Status = 400,
-                        Msg = "Chỉ chấp nhận ảnh (.jpg, .png, .jpeg) hoặc video (.mp4, .avi, .mov)",
+                        Msg = "Chỉ chấp nhận ảnh (.jpg, .jpeg, .jfif, .png) hoặc video (.mp4, .avi, .mov)",
                         Data = null
                     });
                 }

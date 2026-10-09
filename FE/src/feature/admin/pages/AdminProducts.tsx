@@ -411,7 +411,12 @@ export default function AdminProducts() {
       console.error('[SUBMIT ERROR]', err);
       console.error('[SUBMIT ERROR] response:', err?.response?.data);
       console.error('[SUBMIT ERROR] status:', err?.response?.status);
-      setError(err?.response?.data?.message || err?.message || "Không thể lưu sản phẩm");
+      setError(
+        err?.response?.data?.msg ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Không thể lưu sản phẩm",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1004,7 +1009,7 @@ export default function AdminProducts() {
                     {/* File picker */}
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,.jfif"
                       onChange={(e) => {
                         const file = e.target.files?.[0] ?? null;
                         setImageFile(file);
